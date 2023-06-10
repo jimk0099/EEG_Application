@@ -66,6 +66,12 @@ def game():
     # Initial text
     texts = [
         "Welcome to the Motor Imagery Game!",
+        "In this game, you will be asked to perform a motor imagery task.",
+        "The task is to imagine that you are moving your left or right hand.",
+        "You will be given a visual cue to perform the task.",
+        "Depending on your performance, you will be given a feedback.",
+        "Here is a little preview of the game.",
+        "You don't have to do anything, just watch the screen.",
     ]
 
     def show_stick_figure():
