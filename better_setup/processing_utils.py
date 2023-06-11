@@ -18,11 +18,10 @@ def process_eeg(data):
         # The paper isn't clear regarding the feature extraction.
         # Specifically, it does not mention whether the features are extracted
         # by each channel alone or by all channels together.
-    
-    return data
-    
-    
-    
+    # TODO: extract features
+    # TODO: classify
+    # return prediction
+    raise NotImplementedError
     
 def process_eeg_queue():
     """
@@ -31,7 +30,7 @@ def process_eeg_queue():
     while True:
         data = EEG_QUEUE.get(block=True)
         prediction = process_eeg(data)
-        PREDICITON_QUEUE.put(prediction)
+        PREDICTION_QUEUE.put(prediction)
 
 BOARD = None
 BOARD_ID = None
@@ -39,7 +38,8 @@ SAMPLING_RATE = None
 EEG_CHANNELS = None
 REACTION_DELAY = None
 WINDOW = None
-def initialize_board():
+PROCESSING_THREAD = None
+def initialize():
     """
     This function will initialize the board.
     """     
@@ -69,18 +69,25 @@ def initialize_board():
     # 2014 IEEE REGION 10 SYMPOSIUM. doi:10.1109/tenconspring.2014.6863026 
     WINDOW = 0.256
     
-    
-    # generate uniformly distributed random time stamps
-    TIMESTAMPS = np.random.uniform(low=5.0, high=110.0, size=(10, ))
-    
     # Queue to store the EEG data chunks
     EEG_QUEUE = Queue()
+    # Queue to store the predictions
     PREDICTION_QUEUE = Queue()
 
     # Start a separate thread to run the processing function
-    processing_thread = threading.Thread(target=process_eeg_queue)
-    processing_thread.start()
+    PROCESSING_THREAD = threading.Thread(target=process_eeg_queue)
+    PROCESSING_THREAD.start()
 
+def cleanup_threads():
+    """
+    This function will clean up the threads.
+    """
+    PROCESSING_THREAD.join()
+
+def finish():
+    """
+    This function will finish the board.
+    """
     BOARD.stop_stream()
     BOARD.release_session()
 

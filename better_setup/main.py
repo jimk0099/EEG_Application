@@ -4,10 +4,8 @@ import threading
 import numpy as np
 import tkinter as tk
 
-from processing_utils import initialize_board
+from processing_utils import initialize, cleanup_threads, finish
 from processing_utils import BOARD, SAMPLING_RATE, PREDICTION_QUEUE, REACTION_DELAY, WINDOW
-
-
 
 # game globals
 DELAY = 0
@@ -17,10 +15,11 @@ STICK_ARM_LEFT = None
 STICK_ARM_RIGHT = None
 STICK_LEG_LEFT = None
 STICK_LEG_RIGHT = None
+SCORE = None
 ROOT = None
 CANVAS = None
-
 TIMESTAMPS = None
+# end game globals
 
 def show_stick_figure():
     global HEAD, STICK, STICK_ARM_LEFT, STICK_ARM_RIGHT, STICK_LEG_LEFT, STICK_LEG_RIGHT
@@ -167,7 +166,13 @@ def positive_feedback():
     global CANVAS
     # make the existing sun green
     CANVAS.after(0, lambda: CANVAS.itemconfig("sun", fill="green"))
+    # raise the left arm
     CANVAS.after(0, lambda: show_stick_figure_raise_left_arm())
+    # show a point gained
+    SCORE += 1
+    CANVAS.after(0, lambda: CANVAS.delete("score"))
+    CANVAS.after(0, lambda: CANVAS.create_text(100, 300, text=str(SCORE),font=("Arial", 24),
+                                            fill="black", tags="score"))
 
 def negative_feedback():
     """
@@ -175,7 +180,9 @@ def negative_feedback():
     to the user.
     """
     global CANVAS
-    CANVAS.after(0, lambda: CANVAS.create_oval(100, 100, 200, 200, fill="red"))
+    # make the existing sun red
+    CANVAS.after(0, lambda: CANVAS.itemconfig("sun", fill="red"))
+
 
 def reset_feedback():
     """
@@ -202,24 +209,23 @@ def prompt_right():
     global CANVAS
     CANVAS.after(0, lambda: CANVAS.create_oval(600, 100, 700, 200, fill="yellow", tags="sun"))
 
-def begin_prompting():
+def game_body():
     """
     This function will begin the prompting process.
     The user will be prompted to perform the motor imagery
     task and the game will process the EEG data to determine
     whether the user is performing the task or not.
     """
-    # TODO: This function is not yet finished. It needs work.
+    # TODO: This function is not yet finished. It needs checking.
 
-    global TIMESTAMPS, DELAY, CANVAS
-    print("begin prompting", DELAY)
+    global TIMESTAMPS, DELAY, CANVAS, SCORE
 
-
-    TIMESTAMPS = np.random.randint(DELAY, DELAY + 100000, size=10)
+    amount = 10
+    TIMESTAMPS = np.random.randint(DELAY, DELAY + 100000, size=amount)
     TIMESTAMPS.sort()
-    PROMPTS = np.random.randint(0, 1, size=10)
-    local_delay = 0
+    PROMPTS = np.random.randint(0, 1, size=10) # 0 for left, 1 for right
 
+    local_delay = 0
 
     CANVAS.after(local_delay,
                  lambda: CANVAS.create_text(400, 50, text="Let's play!",
@@ -230,22 +236,26 @@ def begin_prompting():
                  lambda: CANVAS.create_oval(100, 100, 200, 200, fill="yellow"))
     CANVAS.after(local_delay + 6000,
                  lambda: show_stick_figure())
+    CANVAS.after(local_delay + 6000,
+                    lambda: CANVAS.create_text(100, 300, text=str(SCORE), font=("Arial", 24),
+                                            fill="black", tags="score"))
     
     
     local_delay += 6000
     for index, timestamp in enumerate(TIMESTAMPS):
+        
         # wait for the elapsed time
+        # and then prompt the user
         if PROMPTS[index] == 0:
             CANVAS.after(local_delay + timestamp,
                          lambda: prompt_left())
         else:
             CANVAS.after(local_delay + timestamp,
                          lambda: prompt_right())
-        
         local_delay += timestamp
+        BOARD.insert_marker(timestamp)        
 
-        BOARD.insert_marker(timestamp)
-        
+
         # wait for the user to react, suppose constant reaction time
         time.sleep(REACTION_DELAY + WINDOW)
         local_delay += REACTION_DELAY + WINDOW
@@ -260,21 +270,37 @@ def begin_prompting():
         local_delay += (end - start)
 
 
+        # show the feedback
         if prediction == PROMPTS[index]:
-            # execute the actual prompting function
-            CANVAS.after(local_delay,
-                         lambda: positive_feedback())
+            CANVAS.after(local_delay, lambda: positive_feedback())
             local_delay += 2000
         else:
-            CANVAS.after(local_delay,
-                         lambda: negative_feedback())
+            CANVAS.after(local_delay, lambda: negative_feedback())
             local_delay += 2000
-        CANVAS.after(local_delay,
-                        lambda: reset_feedback())
+        CANVAS.after(local_delay, lambda: reset_feedback())
         
         # subtract the initial time from the timestamps
         TIMESTAMPS = np.minus(TIMESTAMPS, timestamp)
+    
+    # end the game
+    CANVAS.after(local_delay, lambda: CANVAS.delete("all"))
+    CANVAS.after(local_delay, lambda: CANVAS.create_text(400, 50, text="Thanks for playing!",
+                                            font=("Arial", 24), fill="black"))
+    CANVAS.after(local_delay + 4000, lambda: CANVAS.delete("all"))
         
+    CANVAS.after(local_delay + 6000, 
+                 lambda: CANVAS.create_text(400, 50,
+                                            text="Your score is: " + str(SCORE) + "out of " + str(amount),
+                                            font=("Arial", 24), fill="black"))
+    CANVAS.after(local_delay + 10000, lambda: CANVAS.delete("all"))
+    CANVAS.after(local_delay + 12000, lambda: CANVAS.create_text(400, 50,
+                                            text="Goodbye!",
+                                            font=("Arial", 24), fill="black"))
+    CANVAS.after(local_delay + 16000, lambda: CANVAS.delete("all"))
+    DELAY += local_delay + 16000
+    
+                                                                 
+    
 
 def game():
     """
@@ -288,11 +314,30 @@ def game():
     CANVAS = tk.Canvas(ROOT, width=800, height=600)
     CANVAS.pack()
     
-    print(f"entering tutorial {DELAY}")
-    tutorial() # alters the global DELAY
-    print(f"entering prompting {DELAY}")
+    # TODO: this may be better
+    # tutorial_thread = threading.Thread(target=tutorial)
+    # tutorial_thread.start()
+    # tutorial_thread.join()
 
-    CANVAS.after(DELAY, lambda: begin_prompting())
+    tutorial() # alters the global DELAY
+    game_body() # alters the global DELAY
+    ROOT.quit()
+
+    # CANVAS.after(DELAY, lambda: game_body())
+    
+    
+    # TODO: this may be better
+    # game_body_thread = threading.Thread(target=game_body)
+    # game_body_thread.start()
+    # game_body_thread.join()
+
+
+    # wait for the begin_prompting function
+    # to finish, then destroy the window
+    # TODO: not sure about the following line
+    # it's probably wrong. 
+    # CANVAS.after(DELAY, lambda: ROOT.destroy())
+
 
     ROOT.mainloop()
 
@@ -301,14 +346,12 @@ def game():
 def main():
     # Start a separate thread to run the user prompt function
     # game()
+    initialize()
     game_thread = threading.Thread(target=game)
     game_thread.start()
-    
-    # initialize the board
-    # this function starts the board stream
-    # the processing thread
-    # and the processing queue thread
-    initialize_board()
+    game_thread.join()
+    cleanup_threads()
+    finish()
 
 if __name__ == "__main__":
     main()
