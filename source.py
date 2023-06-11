@@ -5,6 +5,8 @@ import pandas as pd
 import tkinter as tk
 from queue import Queue
 
+from game_utils import show_new_text, show_stick_figure, show_stick_figure_raise_left_arm, game
+
 from brainflow.board_shim import BoardShim, BrainFlowInputParams, LogLevels, BoardIds
 from brainflow.data_filter import DataFilter, FilterTypes, AggOperations, NoiseTypes
 
