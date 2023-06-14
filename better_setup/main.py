@@ -4,8 +4,7 @@ import threading
 import numpy as np
 import tkinter as tk
 
-from processing_utils import initialize, cleanup_threads, finish
-from processing_utils import BOARD, SAMPLING_RATE, PREDICTION_QUEUE, REACTION_DELAY, WINDOW
+from processing_utils import initialize, cleanup_threads, finish, get_prediction
 
 # game globals
 DELAY = 0
@@ -15,7 +14,7 @@ STICK_ARM_LEFT = None
 STICK_ARM_RIGHT = None
 STICK_LEG_LEFT = None
 STICK_LEG_RIGHT = None
-SCORE = None
+SCORE = 0
 ROOT = None
 CANVAS = None
 TIMESTAMPS = None
@@ -62,7 +61,6 @@ def tutorial():
     This function will show the tutorial of the game.
     """
     global CANVAS, DELAY
-    print("FIRST")
     # Initial text
     texts = [
         "Welcome to the Motor Imagery Game!",
@@ -158,12 +156,14 @@ def tutorial():
     CANVAS.after(DELAY + len(texts4) * 4000, lambda: CANVAS.delete("all"))
     DELAY += 1000 + len(texts4) * 4000
 
+
+
 def positive_feedback():
     """
     This function will show a positive feedback
     to the user.
     """
-    global CANVAS
+    global CANVAS, SCORE
     # make the existing sun green
     CANVAS.after(0, lambda: CANVAS.itemconfig("sun", fill="green"))
     # raise the left arm
@@ -219,11 +219,14 @@ def game_body():
     # TODO: This function is not yet finished. It needs checking.
 
     global TIMESTAMPS, DELAY, CANVAS, SCORE
+    LEFT = 0
+    RIGHT = 1
+    NEITHER = 2
 
     amount = 10
-    TIMESTAMPS = np.random.randint(DELAY, DELAY + 100000, size=amount)
+    TIMESTAMPS = np.random.randint(0, 0 + 100000, size=amount)
     TIMESTAMPS.sort()
-    PROMPTS = np.random.randint(0, 1, size=10) # 0 for left, 1 for right
+    PROMPTS = np.random.randint(LEFT, RIGHT, size=10) # 0 for left, 1 for right
 
     local_delay = 0
 
@@ -237,7 +240,7 @@ def game_body():
     CANVAS.after(local_delay + 6000,
                  lambda: show_stick_figure())
     CANVAS.after(local_delay + 6000,
-                    lambda: CANVAS.create_text(100, 300, text=str(SCORE), font=("Arial", 24),
+                 lambda: CANVAS.create_text(100, 300, text=str(SCORE), font=("Arial", 24),
                                             fill="black", tags="score"))
     
     
@@ -246,41 +249,26 @@ def game_body():
         
         # wait for the elapsed time
         # and then prompt the user
-        if PROMPTS[index] == 0:
-            CANVAS.after(local_delay + timestamp,
+        if PROMPTS[index] == LEFT:
+            CANVAS.after(local_delay + timestamp + 2000,
                          lambda: prompt_left())
         else:
-            CANVAS.after(local_delay + timestamp,
+            CANVAS.after(local_delay + timestamp + 2000,
                          lambda: prompt_right())
+        
         local_delay += timestamp
-        BOARD.insert_marker(timestamp)        
+        prediction, lag = get_prediction(timestamp)
+        local_delay += lag
 
-
-        # wait for the user to react, suppose constant reaction time
-        time.sleep(REACTION_DELAY + WINDOW)
-        local_delay += REACTION_DELAY + WINDOW
+        if not prediction == NEITHER:
+            # show the feedback
+            if prediction == PROMPTS[index]:
+                CANVAS.after(local_delay, lambda: positive_feedback())
+            else:
+                CANVAS.after(local_delay, lambda: negative_feedback())
         
-        # gather eeg data
-        EEG_QUEUE.put(BOARD.get_board_data(WINDOW*SAMPLING_RATE))
-        
-        # get the prediction
-        start = time.time()
-        prediction = PREDICTION_QUEUE.get(block=True)
-        end = time.time()
-        local_delay += (end - start)
-
-
-        # show the feedback
-        if prediction == PROMPTS[index]:
-            CANVAS.after(local_delay, lambda: positive_feedback())
-            local_delay += 2000
-        else:
-            CANVAS.after(local_delay, lambda: negative_feedback())
-            local_delay += 2000
+        local_delay += 2000
         CANVAS.after(local_delay, lambda: reset_feedback())
-        
-        # subtract the initial time from the timestamps
-        TIMESTAMPS = np.minus(TIMESTAMPS, timestamp)
     
     # end the game
     CANVAS.after(local_delay, lambda: CANVAS.delete("all"))
@@ -290,7 +278,7 @@ def game_body():
         
     CANVAS.after(local_delay + 6000, 
                  lambda: CANVAS.create_text(400, 50,
-                                            text="Your score is: " + str(SCORE) + "out of " + str(amount),
+                                            text="Your score is: " + str(SCORE) + " out of " + str(amount),
                                             font=("Arial", 24), fill="black"))
     CANVAS.after(local_delay + 10000, lambda: CANVAS.delete("all"))
     CANVAS.after(local_delay + 12000, lambda: CANVAS.create_text(400, 50,
@@ -298,9 +286,10 @@ def game_body():
                                             font=("Arial", 24), fill="black"))
     CANVAS.after(local_delay + 16000, lambda: CANVAS.delete("all"))
     DELAY += local_delay + 16000
-    
-                                                                 
-    
+
+
+
+
 
 def game():
     """
@@ -319,9 +308,15 @@ def game():
     # tutorial_thread.start()
     # tutorial_thread.join()
 
-    tutorial() # alters the global DELAY
-    game_body() # alters the global DELAY
-    ROOT.quit()
+    if TEST:
+        tutorial() # alters the global DELAY
+    else:
+        print("Starting tutorial ...")
+        tutorial()
+        # print("Starting game body ...")
+        CANVAS.after(DELAY, lambda: game_body()) # alters the global DELAY
+        # print("Quiting game ...")
+        ROOT.quit()
 
     # CANVAS.after(DELAY, lambda: game_body())
     
@@ -342,16 +337,29 @@ def game():
     ROOT.mainloop()
 
 
+TEST = False
 
 def main():
     # Start a separate thread to run the user prompt function
     # game()
-    initialize()
-    game_thread = threading.Thread(target=game)
-    game_thread.start()
-    game_thread.join()
-    cleanup_threads()
-    finish()
+    if TEST:
+        game()
+    else:
+        print("Initializing...")
+        initialize()
+        # print("Starting game thread ...")
+        # game_thread = threading.Thread(target=game)
+        # game_thread.start()
+        # game_thread.join()
+        # print("Cleaning up threads...")
+        game()
+
+
+
+        cleanup_threads()
+        print("Finishing...")
+        finish()
+        print("All done!")
 
 if __name__ == "__main__":
     main()
